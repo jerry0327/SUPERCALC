@@ -5,6 +5,7 @@ import java.util.Locale;
 public class CalculatorEngine {
     private String input;
     private int pos;
+    private int ch;
     private boolean degreeMode = true;
 
     public void setDegreeMode(boolean degreeMode) {
@@ -43,8 +44,6 @@ public class CalculatorEngine {
         return x;
     }
 
-    private int ch;
-
     private void nextChar() {
         pos++;
         ch = pos < input.length() ? input.charAt(pos) : -1;
@@ -57,6 +56,17 @@ public class CalculatorEngine {
             return true;
         }
         return false;
+    }
+
+    private boolean eatWord(String word) {
+        if (!input.startsWith(word, pos)) return false;
+        int end = pos + word.length();
+        if (end < input.length()) {
+            char next = input.charAt(end);
+            if (next >= 'a' && next <= 'z') return false;
+        }
+        while (pos < end) nextChar();
+        return true;
     }
 
     private double parseExpression() {
@@ -73,7 +83,7 @@ public class CalculatorEngine {
         for (;;) {
             if (eat('*')) x *= parsePower();
             else if (eat('/')) x /= parsePower();
-            else if (eat('%')) x %= parsePower();
+            else if (eatWord("mod")) x %= parsePower();
             else return x;
         }
     }
