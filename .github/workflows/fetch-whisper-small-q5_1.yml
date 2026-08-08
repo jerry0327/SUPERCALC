@@ -1,4 +1,4 @@
-name: Fetch Whisper small q5_1 model
+name: Precision ASR — Questionbank 110
 
 on:
   push:
@@ -10,26 +10,165 @@ permissions:
   contents: read
 
 env:
-  MODEL_URL: https://github.com/w3xgroup/taskurio-models/releases/download/whisper-models-v1/ggml-small-q5_1.bin
-  MODEL_SHA256: ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb
+  CACHE_KEY: precision-qbank-110-large-turbo-v1
+  MODEL_URL: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin?download=true
+  MODEL_SHA256: 394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2
+  BUNDLE_SHA256: 3285963b5d748a8bb0524afda5f1f1756a66ec3518458fa0cc0542877330f36d
 
 jobs:
-  fetch-model:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
-      - name: Download and verify model
+      - name: Restore or initialize shared cache
+        id: shared-cache
+        uses: actions/cache@v4
+        with:
+          path: .precision-cache
+          key: ${{ env.CACHE_KEY }}
+      - name: Download verified runtime assets
+        if: steps.shared-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --location --retry 5 --retry-delay 3 "$MODEL_URL" --output ggml-small-q5_1.bin
-          echo "$MODEL_SHA256  ggml-small-q5_1.bin" | sha256sum --check --strict
-          ls -lh ggml-small-q5_1.bin
-      - name: Upload model artifact
+          mkdir -p .precision-cache/download .precision-cache/assets
+          urls=(
+            'https://at.adobe.com/7orblHfsEns02gdb'
+            'https://at.adobe.com/avQG2jnzdHkjz8gs'
+            'https://at.adobe.com/88NiGCJiPkkq1EPn'
+            'https://at.adobe.com/FjPpRr93ziZV7iUb'
+          )
+          for i in "${!urls[@]}"; do
+            printf -v n '%02d' "$i"
+            curl --fail --location --retry 5 --retry-delay 3 "${urls[$i]}" -o ".precision-cache/download/part-${n}"
+          done
+          cat .precision-cache/download/part-* > .precision-cache/qbank110_minimal.zip
+          echo "$BUNDLE_SHA256  .precision-cache/qbank110_minimal.zip" | sha256sum --check --strict
+          unzip -q .precision-cache/qbank110_minimal.zip -d .precision-cache/assets
+          curl --fail --location --retry 5 --retry-delay 5 "$MODEL_URL" -o .precision-cache/ggml-large-v3-turbo-q5_0.bin
+          echo "$MODEL_SHA256  .precision-cache/ggml-large-v3-turbo-q5_0.bin" | sha256sum --check --strict
+          cd .precision-cache
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund --omit=dev onnxruntime-node@1.22.0 @napi-rs/whisper@0.0.4 opencc-js@1.0.5
+          rm -rf download qbank110_minimal.zip
+          du -sh .
+
+  transcribe:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        item:
+          - 110-Q001-Q005
+          - 110-Q006-Q010
+          - 110-Q011-Q015
+          - 110-Q016-Q020
+          - 110-Q021-Q025
+          - 110-Q026-Q030
+          - 110-Q031-Q035
+          - 110-Q036-Q040
+          - 110-Q041-Q045
+          - 110-Q046-Q050
+          - 110-Q051-Q055
+          - 110-Q056-Q060
+          - 110-Q061-Q065
+          - 110-Q066-Q070
+          - 110-Q071-Q075
+          - 110-Q076-Q080
+          - 110-Q081-Q085
+          - 110-Q086-Q090
+          - 110-Q091-Q095
+          - 110-Q096-Q100
+          - 110-Q101-Q105
+          - 110-Q106-Q110
+          - 110-Q111-Q115
+          - 110-Q116-Q120
+          - 110-Q121-Q125
+          - 110-Q126-Q130
+          - 110-Q131-Q135
+          - 110-Q136-Q140
+          - 110-Q141-Q145
+          - 110-Q146-Q150
+          - 110-Q151-Q155
+          - 110-Q156-Q160
+          - 110-Q161-Q165
+          - 110-Q166-Q170
+          - 110-Q171-Q175
+          - 110-Q176-Q180
+          - 110-Q181-Q185
+          - 110-Q186-Q190
+          - 110-Q191-Q195
+          - 110-Q196-Q200
+    steps:
+      - name: Restore shared cache
+        uses: actions/cache@v4
+        with:
+          path: .precision-cache
+          key: ${{ env.CACHE_KEY }}
+          fail-on-cache-miss: true
+      - name: Decode SNAC and transcribe at source 1.0x
+        shell: bash
+        env:
+          NODE_PATH: ${{ github.workspace }}/.precision-cache/node_modules
+          WHISPER_THREADS: '4'
+          WHISPER_LANGUAGE: zh
+          WHISPER_PROMPT: '繁體中文，台灣急診專科醫師題庫。保留英文醫學縮寫、疾病名稱、藥名、數字、劑量與單位；內容包含急診醫學、毒物、創傷、兒科、心臟、神經、感染、EMS。'
+        run: |
+          set -euo pipefail
+          item='${{ matrix.item }}'
+          mkdir -p work output
+          node .precision-cache/assets/decode_snc1_parallel.js \
+            ".precision-cache/assets/input/${item}.snac" \
+            ".precision-cache/assets/input/${item}.snac.json" \
+            work/encoded.wav \
+            .precision-cache/assets/decoder_model_fp16.onnx 4 296
+          ffmpeg -hide_banner -loglevel error -y -i work/encoded.wav \
+            -af 'atempo=0.714285714286' -ac 1 -ar 16000 -c:a pcm_s16le work/source.wav
+          node .precision-cache/assets/transcribe_whisper.js \
+            work/source.wav work/asr.raw.json \
+            .precision-cache/ggml-large-v3-turbo-q5_0.bin
+          node .precision-cache/assets/to_traditional.js work/asr.raw.json "output/${item}.json"
+      - name: Add per-segment acoustic pitch evidence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, math, wave
+          from pathlib import Path
+          import numpy as np
+          item='${{ matrix.item }}'
+          p=Path('output')/f'{item}.json'
+          d=json.loads(p.read_text(encoding='utf-8'))
+          with wave.open('work/source.wav','rb') as h:
+              sr=h.getframerate(); a=np.frombuffer(h.readframes(h.getnframes()),dtype='<i2').astype(np.float32)/32768.0
+          def pitch(frame):
+              frame=frame-float(np.mean(frame)); rms=float(np.sqrt(np.mean(frame*frame)))
+              if rms<0.006: return None
+              frame=frame*np.hanning(len(frame)); n=1<<(2*len(frame)-1).bit_length()
+              spec=np.fft.rfft(frame,n=n); corr=np.fft.irfft(spec*np.conj(spec),n=n)[:len(frame)]
+              lo=max(1,int(sr/320)); hi=min(len(frame)-2,int(sr/70))
+              if hi<lo: return None
+              lag=lo+int(np.argmax(corr[lo:hi+1]))
+              if corr[lag]<corr[0]*0.22: return None
+              v=float(sr/lag)
+              return v if 70<=v<=320 else None
+          def segment_pitch(st,en):
+              first=max(0,int(float(st)*sr)); last=min(len(a),int(float(en)*sr)); fl=max(64,round(sr*0.04))
+              if last-first<fl: return None
+              pos=np.arange(first,last-fl+1,max(1,round(sr*0.02)))
+              if len(pos)>24: pos=pos[np.linspace(0,len(pos)-1,24).astype(int)]
+              vals=[v for o in pos if (v:=pitch(a[o:o+fl])) is not None]
+              return round(float(np.median(vals)),2) if vals else None
+          for s in d.get('segments',[]): s['median_f0_hz']=segment_pitch(s['start'],s['end'])
+          p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          PY
+      - name: Upload ASR evidence
         uses: actions/upload-artifact@v4
         with:
-          name: ggml-small-q5_1
-          path: ggml-small-q5_1.bin
+          name: asr-${{ matrix.item }}
+          path: output/${{ matrix.item }}.json
           if-no-files-found: error
-          compression-level: 0
+          compression-level: 9
           retention-days: 1
