@@ -1,0 +1,38 @@
+name: fetch-whisper-assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fetch-whisper-assets.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Fetch quantized Whisper models
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          base='https://huggingface.co/ggerganov/whisper.cpp/resolve/main'
+          for model in tiny-q5_1 base-q5_1 small-q5_1; do
+            curl -L --retry 5 --retry-all-errors --fail --show-error \
+              -o "out/ggml-${model}.bin" \
+              "${base}/ggml-${model}.bin?download=true"
+          done
+          (cd out && sha256sum ggml-*.bin > SHA256SUMS.txt)
+          ls -lh out
+      - name: Upload assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-quantized-models
+          path: out/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
