@@ -1,0 +1,34 @@
+name: Precision SNAC model transfer
+
+on:
+  push:
+    branches:
+      - precision-snac-107-20260808
+    paths:
+      - .github/workflows/precision-snac-fetch-model.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download Whisper base q5_1 model
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 5 --retry-all-errors \
+            -o ggml-base-q5_1.bin \
+            https://github.com/w3xgroup/taskurio-models/releases/download/whisper-models-v1/ggml-base-q5_1.bin
+          echo '422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898  ggml-base-q5_1.bin' | sha256sum -c -
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ggml-base-q5_1
+          path: ggml-base-q5_1.bin
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
