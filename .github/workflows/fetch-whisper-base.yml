@@ -1,0 +1,27 @@
+name: Temporary Whisper Base Bundle
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/fetch-whisper-base.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download model
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bundle
+          curl -L --retry 5 --fail --show-error -o bundle/ggml-base-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
+          echo '422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898  bundle/ggml-base-q5_1.bin' | sha256sum -c -
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-base-q5-1
+          path: bundle/
+          compression-level: 0
+          retention-days: 1
