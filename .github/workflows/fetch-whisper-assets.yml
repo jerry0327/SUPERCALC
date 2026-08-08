@@ -13,25 +13,23 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
-      - name: Fetch quantized Whisper models
+      - name: Fetch optimized Whisper Linux binary
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p out
-          base='https://huggingface.co/ggerganov/whisper.cpp/resolve/main'
-          for model in tiny-q5_1 base-q5_1 small-q5_1; do
-            curl -L --retry 5 --retry-all-errors --fail --show-error \
-              -o "out/ggml-${model}.bin" \
-              "${base}/ggml-${model}.bin?download=true"
-          done
-          (cd out && sha256sum ggml-*.bin > SHA256SUMS.txt)
-          ls -lh out
+          curl -L --retry 5 --retry-all-errors --fail --show-error \
+            -o /tmp/whisper-bin.tar.gz \
+            https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-ubuntu-x64.tar.gz
+          tar -xzf /tmp/whisper-bin.tar.gz -C out
+          find out -type f -maxdepth 4 -print0 | sort -z | xargs -0 sha256sum > out/SHA256SUMS.txt
+          find out -maxdepth 4 -type f -printf '%p %s bytes\n'
       - name: Upload assets
         uses: actions/upload-artifact@v4
         with:
-          name: whisper-quantized-models
+          name: whisper-bin-ubuntu-x64
           path: out/
           compression-level: 0
           retention-days: 1
