@@ -1,0 +1,35 @@
+name: Fetch Whisper small q5_1 model
+
+on:
+  push:
+    branches:
+      - chatgpt/precision-qbank-110-model
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MODEL_URL: https://github.com/w3xgroup/taskurio-models/releases/download/whisper-models-v1/ggml-small-q5_1.bin
+  MODEL_SHA256: ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb
+
+jobs:
+  fetch-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download and verify model
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-delay 3 "$MODEL_URL" --output ggml-small-q5_1.bin
+          echo "$MODEL_SHA256  ggml-small-q5_1.bin" | sha256sum --check --strict
+          ls -lh ggml-small-q5_1.bin
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ggml-small-q5_1
+          path: ggml-small-q5_1.bin
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
