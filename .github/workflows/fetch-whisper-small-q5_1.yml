@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  CACHE_KEY: precision-qbank-110-large-turbo-v2
+  CACHE_KEY: precision-qbank-110-large-turbo-v3
   MODEL_URL: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin?download=true
   MODEL_SHA256: 394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2
   BUNDLE_SHA256: 3285963b5d748a8bb0524afda5f1f1756a66ec3518458fa0cc0542877330f36d
@@ -49,7 +49,7 @@ jobs:
           echo "$MODEL_SHA256  .precision-cache/ggml-large-v3-turbo-q5_0.bin" | sha256sum --check --strict
           cd .precision-cache
           printf '%s\n' '{"name":"precision-cache","private":true,"version":"1.0.0"}' > package.json
-          npm install --no-audit --no-fund --omit=dev onnxruntime-node@1.22.0 @napi-rs/whisper@0.0.4 opencc-js@1.0.5
+          ONNXRUNTIME_NODE_INSTALL=skip npm install --no-audit --no-fund --omit=dev onnxruntime-node@1.22.0 @napi-rs/whisper@0.0.4 opencc-js@1.0.5
           rm -rf download qbank110_minimal.zip
           du -sh .
 
@@ -131,39 +131,6 @@ jobs:
             work/source.wav work/asr.raw.json \
             .precision-cache/ggml-large-v3-turbo-q5_0.bin
           node .precision-cache/assets/to_traditional.js work/asr.raw.json "output/${item}.json"
-      - name: Add per-segment acoustic pitch evidence
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import json, wave
-          from pathlib import Path
-          import numpy as np
-          item='${{ matrix.item }}'
-          p=Path('output')/f'{item}.json'
-          d=json.loads(p.read_text(encoding='utf-8'))
-          with wave.open('work/source.wav','rb') as h:
-              sr=h.getframerate(); a=np.frombuffer(h.readframes(h.getnframes()),dtype='<i2').astype(np.float32)/32768.0
-          def pitch(frame):
-              frame=frame-float(np.mean(frame)); rms=float(np.sqrt(np.mean(frame*frame)))
-              if rms<0.006: return None
-              frame=frame*np.hanning(len(frame)); n=1<<(2*len(frame)-1).bit_length()
-              spec=np.fft.rfft(frame,n=n); corr=np.fft.irfft(spec*np.conj(spec),n=n)[:len(frame)]
-              lo=max(1,int(sr/320)); hi=min(len(frame)-2,int(sr/70))
-              if hi<lo: return None
-              lag=lo+int(np.argmax(corr[lo:hi+1]))
-              if corr[lag]<corr[0]*0.22: return None
-              v=float(sr/lag)
-              return v if 70<=v<=320 else None
-          def segment_pitch(st,en):
-              first=max(0,int(float(st)*sr)); last=min(len(a),int(float(en)*sr)); fl=max(64,round(sr*0.04))
-              if last-first<fl: return None
-              pos=np.arange(first,last-fl+1,max(1,round(sr*0.02)))
-              if len(pos)>24: pos=pos[np.linspace(0,len(pos)-1,24).astype(int)]
-              vals=[v for o in pos if (v:=pitch(a[o:o+fl])) is not None]
-              return round(float(np.median(vals)),2) if vals else None
-          for s in d.get('segments',[]): s['median_f0_hz']=segment_pitch(s['start'],s['end'])
-          p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-          PY
       - name: Upload ASR evidence
         uses: actions/upload-artifact@v4
         with:
