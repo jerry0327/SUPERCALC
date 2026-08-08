@@ -1,0 +1,34 @@
+name: Precision SNAC small-model transfer
+
+on:
+  push:
+    branches:
+      - precision-snac-107-20260808
+    paths:
+      - .github/workflows/precision-snac-fetch-small-model.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Download Whisper small q5_1 model
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 5 --retry-all-errors \
+            -o ggml-small-q5_1.bin \
+            https://github.com/w3xgroup/taskurio-models/releases/download/whisper-models-v1/ggml-small-q5_1.bin
+          echo 'ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb  ggml-small-q5_1.bin' | sha256sum -c -
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ggml-small-q5_1
+          path: ggml-small-q5_1.bin
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
